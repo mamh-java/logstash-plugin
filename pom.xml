@@ -64,7 +64,8 @@
     <changelist>-SNAPSHOT</changelist>
     <skipIntegrationTests>true</skipIntegrationTests>
     <java.level>8</java.level>
-    <jenkins.version>2.150.3</jenkins.version>
+    <jenkins.version>2.249.3</jenkins.version>
+    <slf4jVersion>1.7.26</slf4jVersion>
   </properties>
 
   <dependencyManagement>
