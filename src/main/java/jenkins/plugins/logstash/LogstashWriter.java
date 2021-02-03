@@ -37,6 +37,7 @@ import org.apache.commons.lang.exception.ExceptionUtils;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
@@ -133,7 +134,13 @@ public class LogstashWriter implements Serializable {
       List<String> logLines;
       try {
         if (maxLines < 0) {
-          logLines = build.getLog(Integer.MAX_VALUE);
+          long logFileLength = build.getLogText().length();
+          long pos = 0;
+          ByteArrayOutputStream baos = new ByteArrayOutputStream();
+          while (pos < logFileLength) {
+            pos = build.getLogText().writeLogTo(pos, baos);
+          }
+          logLines = Arrays.asList(baos.toString().split("\n"));
         } else {
           logLines = build.getLog(maxLines);
         }
