@@ -25,6 +25,8 @@
 package jenkins.plugins.logstash;
 
 
+import com.google.common.base.Joiner;
+import com.google.common.collect.Lists;
 import hudson.model.AbstractBuild;
 import hudson.model.TaskListener;
 import hudson.model.Run;
@@ -45,6 +47,7 @@ import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A writer that wraps all Logstash DAOs.  Handles error reporting and per build connection state.
@@ -130,26 +133,31 @@ public class LogstashWriter implements Serializable {
    */
   public void writeBuildLog(int maxLines) {
     if (!isConnectionBroken()) {
-      // FIXME: build.getLog() won't have the last few lines like "Finished: SUCCESS" because this hasn't returned yet...
       List<String> logLines;
       try {
-        if (maxLines < 0) {
-          long logFileLength = build.getLogText().length();
-          long pos = 0;
-          ByteArrayOutputStream baos = new ByteArrayOutputStream();
-          while (pos < logFileLength) {
-            pos = build.getLogText().writeLogTo(pos, baos);
-          }
-          logLines = Arrays.asList(baos.toString().split("\n"));
+        if(maxLines == 0){
+          logLines =  Arrays.asList();
         } else {
-          logLines = build.getLog(maxLines);
+          if (maxLines < 0) {
+            long logFileLength = build.getLogText().length();
+            long pos = 0;
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            while (pos < logFileLength) {
+              pos = build.getLogText().writeLogTo(pos, baos);
+            }
+            logLines = Arrays.asList(baos.toString().split("\n"));
+          } else {
+            logLines = build.getLog(maxLines);
+          }
+          int size = logLines.size();
+          int part = size / 1000;
+          List<List<String>> partList = Lists.partition(logLines, part > 0 ? part : 1);
+          logLines = partList.stream().map(strList -> Joiner.on("\n").skipNulls().join(strList)).collect(Collectors.toList());
         }
       } catch (IOException e) {
         String msg = "[logstash-plugin]: Unable to serialize log data.\n" +
           ExceptionUtils.getStackTrace(e);
         logErrorMessage(msg);
-
-        // Continue with error info as logstash payload
         logLines = Arrays.asList(msg.split("\n"));
       }
 
