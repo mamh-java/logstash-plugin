@@ -4,6 +4,10 @@ import java.io.PrintStream;
 import java.util.HashSet;
 import java.util.Set;
 
+import hudson.model.Job;
+import hudson.util.RunList;
+import jenkins.model.Jenkins;
+import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
@@ -27,12 +31,16 @@ public class LogstashSendStep extends Step
 
   private int maxLines;
   private boolean failBuild;
+  private int buildNumber;
+  private String jobname;
 
   @DataBoundConstructor
-  public LogstashSendStep(int maxLines, boolean failBuild)
+  public LogstashSendStep(int maxLines, boolean failBuild, String jobname, int buildNumber)
   {
     this.maxLines = maxLines;
     this.failBuild = failBuild;
+    this.jobname = jobname;
+    this.buildNumber= buildNumber;
   }
 
   public int getMaxLines()
@@ -45,10 +53,18 @@ public class LogstashSendStep extends Step
     return failBuild;
   }
 
+  public int getBuildNumber() {
+    return buildNumber;
+  }
+
+  public String getJobname() {
+    return jobname;
+  }
+
   @Override
   public StepExecution start(StepContext context) throws Exception
   {
-    return new Execution(context, maxLines, failBuild);
+    return new Execution(context, maxLines, failBuild, jobname, buildNumber);
   }
 
   @SuppressFBWarnings(value="SE_TRANSIENT_FIELD_NOT_RESTORED", justification="Only used when starting.")
@@ -58,26 +74,44 @@ public class LogstashSendStep extends Step
     private static final long serialVersionUID = 1L;
 
     private transient final int maxLines;
+    private transient final int buildNumber;
+    private transient final String jobname;
     private transient final boolean failBuild;
 
-    Execution(StepContext context, int maxLines, boolean failBuild)
+    Execution(StepContext context, int maxLines, boolean failBuild, String jobname, int buildNumber)
     {
       super(context);
       this.maxLines = maxLines;
       this.failBuild = failBuild;
+      this.jobname = jobname;
+      this.buildNumber = buildNumber;
     }
 
     @Override
     protected Void run() throws Exception
     {
-      Run<?, ?> run = getContext().get(Run.class);
       TaskListener listener = getContext().get(TaskListener.class);
       PrintStream errorStream = listener.getLogger();
-      LogstashWriter logstash = new LogstashWriter(run, errorStream, listener, run.getCharset());
-      logstash.writeBuildLog(maxLines);
-      if (failBuild && logstash.isConnectionBroken())
-      {
-        throw new Exception("Failed to send data to Indexer");
+      if(StringUtils.isNotEmpty(jobname)) {
+        Job job = (Job) Jenkins.get().getItemByFullName(jobname);
+        if(buildNumber > 0){
+          Run run = job.getBuildByNumber(buildNumber);
+          errorStream.println("logstash send to " + run.getDisplayName());
+          LogstashWriter logstash = new LogstashWriter(run, errorStream, listener, run.getCharset());
+          logstash.writeBuildLog(maxLines);
+        } else {
+          RunList<Run> runList = job.getBuilds();
+          for (Run run : runList) {
+            errorStream.println("logstash send to " + run.getDisplayName());
+            LogstashWriter logstash = new LogstashWriter(run, errorStream, listener, run.getCharset());
+            logstash.writeBuildLog(maxLines);
+          }
+        }
+      } else {
+        Run<?, ?> run = getContext().get(Run.class);
+        errorStream.println("logstash send to " + run.getDisplayName());
+        LogstashWriter logstash = new LogstashWriter(run, errorStream, listener, run.getCharset());
+        logstash.writeBuildLog(maxLines);
       }
       return null;
     }
